@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" href="/static/style.css" />
+    <title>LED Usage Tracker</title>
+    <script>
+      let totalUsageSecondsIncrement = 0;
+      let remainingTimeIncrement = 0;
+      let ledStateIsOn = false;
+      let remainingTimeIsZeroNotified = false;
+      function turnOnLED() {
+        fetch("/turn_on")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              document.getElementById("turn-on-btn").disabled = true;
+              document.getElementById("turn-off-btn").disabled = false;
+              ledOnInterval = setInterval(() => {
+                totalUsageSecondsIncrement += 1; // Increment the dynamically increasing total usage
+                remainingTimeIncrement += 1;
+                updateTotalUsage();
+              }, 1000);
+              ledStateIsOn = true;
+            } else {
+              alert("Failed to turn on the LED.");
+            }
+          });
+      }
+
+      function turnOffLED() {
+        fetch("/turn_off")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              document.getElementById("turn-off-btn").disabled = true;
+              document.getElementById("turn-on-btn").disabled = false;
+              location.reload();
+              ledStateIsOn = false; // Set LED state to off
+              remainingTimeIsZeroNotified = false;
+            } else {
+              alert("Failed to turn off the LED.");
+            }
+          });
+      }
+
+      function sendTelegramMessage(message) {
+        fetch("/send_telegram_message", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            bot_token: "6602018762:AAF9F1p3YjtTyjzou1AB3Zy3wwKOmRZaLFo",
+            chat_id: "1607213208",
+            message: message,
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              console.log("Telegram message sent successfully.");
+            } else {
+              console.error("Failed to send Telegram message.");
+            }
+          });
+      }
+
+      function formatTime(hours, minutes, seconds) {
+        return `${hours}h ${minutes}m ${seconds}s`;
+      }
+
+      function updateTotalUsage() {
+        fetch("/total_usage")
+          .then((response) => response.json())
+          .then((data) => {
+            const {
+              hours,
+              minutes,
+              seconds,
+              remaining_hours,
+              remaining_minutes,
+              remaining_seconds,
+              desired_usage_hours,
+              desired_usage_minutes,
+            } = data;
+
+            document.getElementById("desired_usage_hours").innerText =
+              desired_usage_hours;
+            document.getElementById("desired_usage_minutes").innerText =
+              desired_usage_minutes;
+
+            // Calculate the total usage in seconds from the calculated values
+            const totalUsageSeconds = hours * 3600 + minutes * 60 + seconds;
+
+            // document.getElementById("total-usage").innerText = formatTime(
+            //   hours,
+            //   minutes,
+            //   seconds
+            // );
+            const dynamicallyIncreasingTotalUsage =
+              totalUsageSeconds + totalUsageSecondsIncrement;
+
+            document.getElementById(
+              "dynamically-increasing-total-usage"
+            ).innerText = formatTime(
+              Math.floor(dynamicallyIncreasingTotalUsage / 3600),
+              Math.floor((dynamicallyIncreasingTotalUsage % 3600) / 60),
+              dynamicallyIncreasingTotalUsage % 60
+            );
+
+            const remainingTimeSeconds =
+              remaining_hours * 3600 +
+              remaining_minutes * 60 +
+              remaining_seconds;
+
+            const dynamicallyIncreasingRemainingTime = Math.max(
+              remainingTimeSeconds - remainingTimeIncrement,
+              0
+            );
+            document.getElementById("remaining-usage").innerText = formatTime(
+              Math.floor(dynamicallyIncreasingRemainingTime / 3600),
+              Math.floor((dynamicallyIncreasingRemainingTime % 3600) / 60),
+              dynamicallyIncreasingRemainingTime % 60
+            );
+            if (
+              dynamicallyIncreasingRemainingTime === 0 &&
+              ledStateIsOn &&
+              !remainingTimeIsZeroNotified
+            ) {
+              sendTelegramMessage("Remaining usage time has reached zero!");
+              remainingTimeIsZeroNotified = true;
+            }
+          });
+      }
+
+      function setDesiredUsage() {
+        const desiredHours = document.getElementById("desired-hours").value;
+        const desiredMinutes = document.getElementById("desired-minutes").value;
+        fetch("/set_desired_usage", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            desired_hours: parseInt(desiredHours),
+            desired_minutes: parseInt(desiredMinutes),
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              alert("Desired usage time has been set successfully!");
+              location.reload();
+            } else {
+              alert("Failed to set desired usage time.");
+            }
+          });
+      }
+
+      window.onload = function () {
+        updateTotalUsage();
+        setInterval(updateTotalUsage, 5000); // Update usage data every 5 seconds
+        document.getElementById("turn-on-btn").disabled = false;
+        document.getElementById("turn-off-btn").disabled = true;
+      };
+    </script>
+  </head>
+  <body>
+    <h1>Air Conditioner Usage Tracker</h1>
+    <p >
+      Total Air Conditioner usage: 
+      <span id="dynamically-increasing-total-usage"></span>
+      <br />
+      Remaining Usage Time: <span id="remaining-usage"></span>
+    </p>
+    <p id="desiredUsageTime">
+      Desired usage time:<span id="desired_usage_hours"></span> hours and
+      <span id="desired_usage_minutes"></span> minutes
+    </p>
+    <p>
+      Set Desired Usage Time(hours & minutes):
+      <input
+        type="number"
+        id="desired-hours"
+        min="0"
+        max="23"
+        placeholder="Hours"
+        value="0"
+      />
+      <input
+        type="number"
+        id="desired-minutes"
+        min="0"
+        max="59"
+        placeholder="Minutes"
+        value="0"
+      />
+
+      <button onclick="setDesiredUsage()">Set</button>
+    </p>
+    <p style="margin-top: 3%;">
+      <button id="turn-on-btn" onclick="turnOnLED()">Turn On</button>
+      <button id="turn-off-btn" onclick="turnOffLED()">Turn Off</button>
+    </p>
+  </body>
+</html>
